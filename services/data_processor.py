@@ -271,18 +271,18 @@ class DataProcessor:
         # Garante que a coluna status é string, para evitar erros com .str.contains
         df["status"] = df["status"].astype(str)
 
-        # Status que indicam venda fechada
-        leads_fechados = len(df[df["status"].str.contains(
-            "VENDA|AGUARDANDO PAGAMENTO", case=False, na=False)])
+        # ✅ CORREÇÃO: Usar a mesma lógica dos settings
+        from config.settings import settings
 
-        # Status que indicam leads perdidos
-        leads_perdidos = len(df[df["status"].str.contains(
-            "NÃO TEM INTERESSE|NÃO RESPONDE|NÃO OFERTAMOS", case=False, na=False)])
+        # Status que indicam venda fechada - usar lista exata dos settings
+        leads_fechados = len(df[df["status"].isin(settings.CONVERSION_STATUS)])
+
+        # Status que indicam leads perdidos - usar lista exata dos settings
+        leads_perdidos = len(df[df["status"].isin(settings.LOST_STATUS)])
 
         conversion_rate = (leads_fechados / total_leads *
-                           100) if total_leads > 0 else 0
-        loss_rate = (leads_perdidos / total_leads *
-                     100) if total_leads > 0 else 0
+                        100) if total_leads > 0 else 0
+        loss_rate = (leads_perdidos / total_leads * 100) if total_leads > 0 else 0
 
         return {
             "total_leads": total_leads,

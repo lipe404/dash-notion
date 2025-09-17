@@ -13,12 +13,79 @@ class Dashboard:
         """Renderiza a barra lateral com filtros"""
         st.sidebar.header("🔍 Filtros")
 
+        # ✅ USAR SESSION STATE PARA EVITAR DUPLICAÇÃO
+        if 'df_loaded' not in st.session_state:
+            st.session_state.df_loaded = None
+
+        # Carregar dados para filtros apenas se necessário
+        if st.session_state.df_loaded is None:
+            st.session_state.df_loaded = self.load_data()
+
+        df = st.session_state.df_loaded
+        filters = {}
+
+        if not df.empty:
+            # ✅ FILTRO POR VENDEDOR
+            vendedores = ["Todos"] + sorted(df["vendedor"].unique().tolist())
+            selected_seller = st.sidebar.selectbox(
+                "👤 Selecionar Vendedor",
+                vendedores,
+                key="main_seller_filter"  # ✅ Key única
+            )
+            filters["vendedor"] = selected_seller
+
+            # ✅ FILTRO POR PERÍODO (opcional)
+            if "created_time" in df.columns:
+                df_copy = df.copy()
+                df_copy["created_date"] = pd.to_datetime(
+                    df_copy["created_time"]).dt.date
+
+                min_date = df_copy["created_date"].min()
+                max_date = df_copy["created_date"].max()
+
+                if min_date and max_date:
+                    date_range = st.sidebar.date_input(
+                        "📅 Período",
+                        value=(min_date, max_date),
+                        min_value=min_date,
+                        max_value=max_date,
+                        key="main_date_filter"  # ✅ Key única
+                    )
+
+                    if len(date_range) == 2:
+                        filters["date_range"] = date_range
+
         # Botão para atualizar dados
-        if st.sidebar.button("🔄 Atualizar Dados", type="primary"):
+        if st.sidebar.button("🔄 Atualizar Dados", type="primary", key="refresh_button"):
             st.cache_data.clear()
+            st.session_state.df_loaded = None  # ✅ Limpar session state
             st.rerun()
 
-        return {}
+        return filters
+
+    def apply_filters(self, df: pd.DataFrame, filters: dict) -> pd.DataFrame:
+        """Aplica filtros ao DataFrame"""
+        if df.empty:
+            return df
+
+        filtered_df = df.copy()
+
+        # Filtro por vendedor
+        if filters.get("vendedor") and filters["vendedor"] != "Todos":
+            filtered_df = filtered_df[filtered_df["vendedor"]
+                                      == filters["vendedor"]]
+
+        # Filtro por data
+        if filters.get("date_range") and len(filters["date_range"]) == 2:
+            filtered_df["created_date"] = pd.to_datetime(
+                filtered_df["created_time"]).dt.date
+            start_date, end_date = filters["date_range"]
+            filtered_df = filtered_df[
+                (filtered_df["created_date"] >= start_date) &
+                (filtered_df["created_date"] <= end_date)
+            ]
+
+        return filtered_df
 
     def render_metrics_cards(self, metrics: dict):
         """Renderiza cards de métricas"""
@@ -53,7 +120,7 @@ class Dashboard:
         if df.empty:
             return
 
-        st.subheader("📊 Qualidade dos Dados")
+        st.subheader("📊 Resumo dos Dados")
 
         col1, col2, col3 = st.columns(3)
 
@@ -75,19 +142,32 @@ class Dashboard:
         """Renderiza o dashboard principal"""
         st.title("📊 Dashboard de Vendas - Notion CRM")
 
-        # Carregar dados
-        with st.spinner("Carregando dados do Notion..."):
-            df = self.load_data()
+        # ✅ RENDERIZAR SIDEBAR AQUI (uma única vez)
+        filters = self.render_sidebar()
 
-        if df.empty:
+        # Carregar dados originais
+        with st.spinner("Carregando dados do Notion..."):
+            if 'df_loaded' not in st.session_state or st.session_state.df_loaded is None:
+                st.session_state.df_loaded = self.load_data()
+
+            df_original = st.session_state.df_loaded
+
+        if df_original.empty:
             st.error("❌ Nenhum dado encontrado. Verifique:")
             st.info("• Se o token do Notion está correto")
             st.info("• Se as tabelas têm dados com Nome e/ou Telefone preenchidos")
             st.info("• Se as colunas estão nomeadas corretamente")
             return
 
-        # Mostrar informações de debug
-        st.success(f"✅ {len(df)} leads carregados com sucesso!")
+        # Aplicar filtros
+        df = self.apply_filters(df_original, filters)
+
+        # Mostrar informações
+        """if filters.get("vendedor") and filters["vendedor"] != "Todos":
+            st.success(
+                f"✅ {len(df)} leads carregados para {filters['vendedor']}")
+        else:
+            st.success(f"✅ {len(df)} leads carregados com sucesso!")"""
 
         # Informações sobre qualidade dos dados
         self.render_data_quality_info(df)
@@ -100,11 +180,13 @@ class Dashboard:
 
         st.divider()
 
-        # Gráficos
+        # ✅ GRÁFICOS COM FILTROS APLICADOS
         col1, col2 = st.columns(2)
 
         with col1:
-            self.charts.sales_funnel_chart(df)
+            # Passar vendedor selecionado para o funil
+            selected_seller = filters.get("vendedor", "Todos")
+            self.charts.sales_funnel_chart(df_original, selected_seller)
 
         with col2:
             self.charts.conversion_by_seller_chart(df)

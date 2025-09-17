@@ -21,10 +21,10 @@ def main():
     # Inicializar dashboard
     dashboard = Dashboard()
 
-    # Renderizar sidebar
-    filters = dashboard.render_sidebar()
+    # ✅ REMOVER ESTA LINHA - Não chamar render_sidebar aqui
+    # filters = dashboard.render_sidebar()
 
-    # Renderizar dashboard principal
+    # Renderizar dashboard principal (que já inclui o sidebar)
     dashboard.render_main_dashboard()
 
 
