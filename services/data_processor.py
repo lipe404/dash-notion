@@ -47,6 +47,11 @@ class DataProcessor:
                         f"Erro ao buscar info da página {page_id} para vendedor: {e}")
                     pass
 
+            # ✅ FILTRO 1: Excluir páginas específicas duplicadas
+            if self.is_duplicate_page(vendedor_name):
+                print(f"🚫 PÁGINA DUPLICADA IGNORADA: '{vendedor_name}'")
+                continue
+
             print(
                 f"Processando database: '{db_title}' - Vendedor: '{vendedor_name}'")
 
@@ -59,7 +64,9 @@ class DataProcessor:
             # Contadores para estatísticas
             leads_processados = 0
             leads_validos = 0
-            leads_sem_nome_telefone = 0
+
+            # Lista temporária para validar qualidade dos dados
+            temp_leads = []
 
             for entry in entries:
                 leads_processados += 1
@@ -67,12 +74,22 @@ class DataProcessor:
                     entry, vendedor_name, db_title)
 
                 if lead_data:
-                    leads_validos += 1
-                    all_data.append(lead_data)
-                else:
-                    leads_sem_nome_telefone += 1
+                    temp_leads.append(lead_data)
 
-            print(f"Estatísticas do database '{db_title}':")
+            # ✅ FILTRO 2: Verificar qualidade dos dados do database
+            if self.is_low_quality_database(temp_leads, vendedor_name):
+                print(
+                    f"🚫 DATABASE COM BAIXA QUALIDADE IGNORADO: '{vendedor_name}' - {len(temp_leads)} leads")
+                continue
+
+            # Se passou nos filtros, adicionar os leads válidos
+            for lead in temp_leads:
+                leads_validos += 1
+                all_data.append(lead)
+
+            leads_sem_nome_telefone = leads_processados - leads_validos
+
+            print(f"✅ Estatísticas do database '{db_title}':")
             print(f"  - Total processados: {leads_processados}")
             print(f"  - Leads válidos (com nome/telefone): {leads_validos}")
             print(
@@ -89,6 +106,92 @@ class DataProcessor:
             print(f"DEBUG: Vendedores únicos: {temp_df['vendedor'].unique()}")
 
         return pd.DataFrame(all_data)
+
+    def is_duplicate_page(self, vendedor_name: str) -> bool:
+        """Verifica se é uma página duplicada que deve ser ignorada"""
+
+        # Lista de páginas duplicadas específicas para ignorar
+        duplicated_pages = [
+            "CRM ANA LUÍSA NEVES (1)",
+            "CRM ANA LUISA NEVES (1)",  # Variação sem acento
+        ]
+
+        # Verificar se o nome exato está na lista
+        if vendedor_name in duplicated_pages:
+            return True
+
+        # Verificar padrões de duplicação (páginas com sufixos como (1), (2), etc.)
+        import re
+        duplicate_pattern = r'^(.+)\s+\(\d+\)$'
+        if re.match(duplicate_pattern, vendedor_name):
+            print(
+                f"⚠️ POSSÍVEL DUPLICATA DETECTADA pelo padrão: '{vendedor_name}'")
+            return True
+
+        return False
+
+    def safe_get_string(self, value) -> str:
+        """Converte qualquer valor para string de forma segura"""
+        if value is None:
+            return ""
+        if isinstance(value, str):
+            return value
+        return str(value)
+
+    def is_low_quality_database(self, leads: List[Dict], vendedor_name: str) -> bool:
+        """Verifica se o database tem baixa qualidade de dados"""
+
+        if not leads:
+            return True  # Database vazio
+
+        total_leads = len(leads)
+
+        # ✅ CORREÇÃO: Usar função segura para verificar strings
+        leads_com_nome = sum(1 for lead in leads if self.safe_get_string(
+            lead.get("nome", "")).strip())
+        leads_com_telefone = sum(1 for lead in leads if self.safe_get_string(
+            lead.get("telefone", "")).strip())
+        leads_com_nome_ou_telefone = sum(1 for lead in leads if
+                                         self.safe_get_string(lead.get("nome", "")).strip() or
+                                         self.safe_get_string(lead.get("telefone", "")).strip())
+
+        # Calcular percentuais de qualidade
+        percentual_nome = (leads_com_nome / total_leads) * \
+            100 if total_leads > 0 else 0
+        percentual_telefone = (leads_com_telefone /
+                               total_leads) * 100 if total_leads > 0 else 0
+        percentual_contato = (leads_com_nome_ou_telefone /
+                              total_leads) * 100 if total_leads > 0 else 0
+
+        print(f"📊 Análise de qualidade para '{vendedor_name}':")
+        print(f"  - Total de leads: {total_leads}")
+        print(f"  - Com nome: {leads_com_nome} ({percentual_nome:.1f}%)")
+        print(
+            f"  - Com telefone: {leads_com_telefone} ({percentual_telefone:.1f}%)")
+        print(
+            f"  - Com nome OU telefone: {leads_com_nome_ou_telefone} ({percentual_contato:.1f}%)")
+
+        # ✅ CRITÉRIOS DE BAIXA QUALIDADE:
+
+        # 1. Se menos de 30% dos leads têm dados de contato
+        if percentual_contato < 30:
+            print(
+                f"🚫 REJEITADO: Menos de 30% dos leads têm dados de contato ({percentual_contato:.1f}%)")
+            return True
+
+        # 2. Se é uma página específica conhecida como problemática
+        if "ANA LUÍSA NEVES (1)" in vendedor_name or "ANA LUISA NEVES (1)" in vendedor_name:
+            print(f"🚫 REJEITADO: Página específica na lista de exclusão")
+            return True
+
+        # 3. Se tem poucos leads e baixa qualidade
+        if total_leads < 50 and percentual_contato < 50:
+            print(
+                f"🚫 REJEITADO: Poucos leads ({total_leads}) e baixa qualidade ({percentual_contato:.1f}%)")
+            return True
+
+        print(f"✅ APROVADO: Database passou nos critérios de qualidade")
+        return False
 
     def extract_lead_data(self, entry: Dict[str, Any], vendedor: str, database_name: str) -> Dict[str, Any]:
         """Extrai dados de um lead individual"""
@@ -112,20 +215,23 @@ class DataProcessor:
             value = self.notion_client.extract_property_value(prop_data)
             prop_name_lower = prop_name.lower()
 
+            # ✅ CORREÇÃO: Converter valor para string segura
+            safe_value = self.safe_get_string(value)
+
             # Mapear baseado no nome da propriedade
             if any(keyword in prop_name_lower for keyword in ["data", "date"]):
-                lead_data["data"] = value
+                lead_data["data"] = safe_value
             elif any(keyword in prop_name_lower for keyword in ["nome", "name", "cliente"]):
-                lead_data["nome"] = value
+                lead_data["nome"] = safe_value
             elif any(keyword in prop_name_lower for keyword in ["telefone", "phone", "tel", "fone"]):
-                lead_data["telefone"] = value
+                lead_data["telefone"] = safe_value
             elif any(keyword in prop_name_lower for keyword in ["curso", "course", "produto"]):
-                lead_data["curso"] = value
+                lead_data["curso"] = safe_value
             elif any(keyword in prop_name_lower for keyword in ["status", "etapa", "stage"]):
-                lead_data["status"] = value
+                lead_data["status"] = safe_value
 
             # Adicionar propriedade original também
-            lead_data[f"prop_{prop_name.lower()}"] = value
+            lead_data[f"prop_{prop_name.lower()}"] = safe_value
 
         # Se não encontrou status pelos nomes, tentar encontrar por tipo
         if not lead_data["status"]:
@@ -134,10 +240,10 @@ class DataProcessor:
                     value = self.notion_client.extract_property_value(
                         prop_data)
                     if value:
-                        lead_data["status"] = value
+                        lead_data["status"] = self.safe_get_string(value)
                         break
 
-        # ✅ NOVA VALIDAÇÃO: Só retornar se tiver Nome E/OU Telefone preenchidos
+        # ✅ VALIDAÇÃO CORRIGIDA: Só retornar se tiver Nome E/OU Telefone preenchidos
         nome_preenchido = lead_data["nome"] and lead_data["nome"].strip() != ""
         telefone_preenchido = lead_data["telefone"] and lead_data["telefone"].strip(
         ) != ""

@@ -102,7 +102,8 @@ class NotionClient:
                 return [item.get("name", "") for item in multi_select_list]
 
             elif prop_type == "number":
-                return property_data.get("number", 0) or 0
+                number_value = property_data.get("number")
+                return number_value if number_value is not None else 0
 
             elif prop_type == "date":
                 date_data = property_data.get("date")
@@ -113,10 +114,12 @@ class NotionClient:
                 return [person.get("name", "") for person in people_list]
 
             elif prop_type == "phone_number":
-                return property_data.get("phone_number", "")
+                phone_value = property_data.get("phone_number")
+                return phone_value if phone_value is not None else ""
 
             elif prop_type == "url":
-                return property_data.get("url", "")
+                url_value = property_data.get("url")
+                return url_value if url_value is not None else ""
 
             else:
                 print(f"DEBUG: Tipo de propriedade não tratado: '{prop_type}'")
