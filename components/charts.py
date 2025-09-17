@@ -4,6 +4,7 @@ from plotly.subplots import make_subplots
 import pandas as pd
 import streamlit as st
 from config.settings import settings
+import numpy as np
 
 
 class ChartComponents:
@@ -81,6 +82,27 @@ class ChartComponents:
                 seller_stats["fechados"] / seller_stats["total_leads"] * 100
             ).round(2)
 
+            # ✅ CORREÇÃO: Gerar cores baseadas nos valores
+            # Criar uma escala de cores baseada na taxa de conversão
+            max_rate = seller_stats["conversion_rate"].max()
+            min_rate = seller_stats["conversion_rate"].min()
+
+            # Normalizar valores para escala de 0-1
+            if max_rate > min_rate:
+                normalized_rates = (
+                    seller_stats["conversion_rate"] - min_rate) / (max_rate - min_rate)
+            else:
+                normalized_rates = [0.5] * len(seller_stats)
+
+            # Gerar cores usando uma paleta
+            colors = []
+            for rate in normalized_rates:
+                # Escala de vermelho (baixo) para verde (alto)
+                red = int(255 * (1 - rate))
+                green = int(255 * rate)
+                blue = 50
+                colors.append(f'rgb({red},{green},{blue})')
+
             # Usar gráfico mais simples
             fig = go.Figure()
 
@@ -90,7 +112,7 @@ class ChartComponents:
                 text=seller_stats["conversion_rate"],
                 texttemplate='%{text}%',
                 textposition='outside',
-                marker_color='viridis'
+                marker_color=colors  # ✅ Usar lista de cores específicas
             ))
 
             fig.update_layout(
@@ -130,13 +152,19 @@ class ChartComponents:
             # Distribuição por status
             status_counts = df["status"].value_counts()
 
+            # ✅ CORREÇÃO: Usar cores predefinidas para o gráfico de pizza
+            colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7',
+                      '#DDA0DD', '#98D8C8', '#F39C12', '#E74C3C', '#A8E6CF']
+
             # Usar gráfico mais simples
             fig = go.Figure()
 
             fig.add_trace(go.Pie(
                 labels=status_counts.index,
                 values=status_counts.values,
-                hole=0.3
+                hole=0.3,
+                # ✅ Cores específicas
+                marker=dict(colors=colors[:len(status_counts)])
             ))
 
             fig.update_layout(
@@ -180,7 +208,9 @@ class ChartComponents:
                 x=daily_leads["created_date"],
                 y=daily_leads["count"],
                 mode='lines+markers',
-                name='Leads por dia'
+                name='Leads por dia',
+                line=dict(color='#45B7D1', width=2),
+                marker=dict(color='#FF6B6B', size=6)
             ))
 
             fig.update_layout(
@@ -234,21 +264,21 @@ class ChartComponents:
                 name='Total Leads',
                 x=seller_stats["vendedor"],
                 y=seller_stats["total_leads"],
-                marker_color='lightblue'
+                marker_color='#45B7D1'  # ✅ Cor específica
             ))
 
             fig.add_trace(go.Bar(
                 name='Vendas',
                 x=seller_stats["vendedor"],
                 y=seller_stats["vendas"],
-                marker_color='green'
+                marker_color='#4ECDC4'  # ✅ Cor específica
             ))
 
             fig.add_trace(go.Bar(
                 name='Perdidos',
                 x=seller_stats["vendedor"],
                 y=seller_stats["perdidos"],
-                marker_color='red'
+                marker_color='#FF6B6B'  # ✅ Cor específica
             ))
 
             fig.update_layout(
@@ -266,7 +296,7 @@ class ChartComponents:
             st.error(f"Erro ao gerar gráfico de performance: {str(e)}")
             # Fallback
             if not df.empty and "vendedor" in df.columns:
-                st.subheader("�� Performance por Vendedor (Tabela)")
+                st.subheader("📊 Performance por Vendedor (Tabela)")
                 seller_stats = df.groupby("vendedor").agg({
                     "lead_id": "count",
                     "status": [
