@@ -50,28 +50,43 @@ class DataProcessor:
             print(
                 f"Processando database: '{db_title}' - Vendedor: '{vendedor_name}'")
 
-            # Buscar entradas do database
+            # Buscar TODAS as entradas do database (sem limitação)
             entries = self.notion_client.get_database_entries(database_id)
 
             print(
                 f"Processando {len(entries)} entradas para database '{db_title}'")
 
+            # Contadores para estatísticas
+            leads_processados = 0
+            leads_validos = 0
+            leads_sem_nome_telefone = 0
+
             for entry in entries:
+                leads_processados += 1
                 lead_data = self.extract_lead_data(
                     entry, vendedor_name, db_title)
+
                 if lead_data:
+                    leads_validos += 1
                     all_data.append(lead_data)
                 else:
-                    # Adicione este log para entender por que um lead pode ser ignorado
-                    print(
-                        f"DEBUG: Lead ignorado: {entry.get('id', 'N/A')}. Possivelmente sem nome ou status.")
+                    leads_sem_nome_telefone += 1
 
+            print(f"Estatísticas do database '{db_title}':")
+            print(f"  - Total processados: {leads_processados}")
+            print(f"  - Leads válidos (com nome/telefone): {leads_validos}")
+            print(
+                f"  - Leads ignorados (sem nome/telefone): {leads_sem_nome_telefone}")
+
+        print(f"RESUMO FINAL:")
         print(f"Total de leads coletados: {len(all_data)}")
+
         # Para depuração: mostre os valores únicos de status após o processamento inicial
         if all_data:
             temp_df = pd.DataFrame(all_data)
             print(
                 f"DEBUG: Valores únicos de status após extração: {temp_df['status'].unique()}")
+            print(f"DEBUG: Vendedores únicos: {temp_df['vendedor'].unique()}")
 
         return pd.DataFrame(all_data)
 
@@ -92,20 +107,10 @@ class DataProcessor:
             "status": ""
         }
 
-        # Flag para verificar se encontramos uma propriedade de status
-        found_status_prop = False
-
         # Mapear propriedades
         for prop_name, prop_data in properties.items():
             value = self.notion_client.extract_property_value(prop_data)
             prop_name_lower = prop_name.lower()
-            prop_type = prop_data.get("type", "unknown")
-
-            # DEBUG: Log detalhado para propriedades de status
-            if any(keyword in prop_name_lower for keyword in ["status", "etapa", "stage"]):
-                print(
-                    f"DEBUG: Propriedade de status encontrada -> Nome: '{prop_name}', Tipo: '{prop_type}', Valor extraído: '{value}'")
-                found_status_prop = True
 
             # Mapear baseado no nome da propriedade
             if any(keyword in prop_name_lower for keyword in ["data", "date"]):
@@ -122,34 +127,25 @@ class DataProcessor:
             # Adicionar propriedade original também
             lead_data[f"prop_{prop_name.lower()}"] = value
 
-        # Se não encontramos uma propriedade de status com os nomes esperados
-        # e o status ainda está vazio, isso é um sinal de alerta
-        if not found_status_prop and lead_data["status"] == "":
-            print(
-                f"ATENÇÃO: Não foi encontrada uma propriedade 'status' para o lead {lead_data['lead_id']} usando os termos de busca padrão (status, etapa, stage).")
-            print(f"Por favor, verifique o nome da sua coluna de status no Notion. As propriedades encontradas foram:")
-            for prop_name, prop_data in properties.items():
-                value = self.notion_client.extract_property_value(prop_data)
-                print(
-                    f"  - '{prop_name}' (Tipo: {prop_data.get('type')}) -> Valor extraído: '{value}'")
-            print("-" * 50)
-
-            # Tente encontrar a primeira propriedade do tipo 'status' como fallback
+        # Se não encontrou status pelos nomes, tentar encontrar por tipo
+        if not lead_data["status"]:
             for prop_name, prop_data in properties.items():
                 if prop_data.get("type") == "status":
                     value = self.notion_client.extract_property_value(
                         prop_data)
-                    if value:  # Se encontrou um valor para o status
-                        print(
-                            f"DEBUG: FALLBACK: Usando a propriedade '{prop_name}' (Tipo: {prop_data.get('type')}) como status: '{value}'")
+                    if value:
                         lead_data["status"] = value
-                        found_status_prop = True
-                        break  # Pega a primeira que encontrar
+                        break
 
-        # Retornar se tiver pelo menos um nome ou status
-        if lead_data["nome"] or lead_data["status"]:
+        # ✅ NOVA VALIDAÇÃO: Só retornar se tiver Nome E/OU Telefone preenchidos
+        nome_preenchido = lead_data["nome"] and lead_data["nome"].strip() != ""
+        telefone_preenchido = lead_data["telefone"] and lead_data["telefone"].strip(
+        ) != ""
+
+        if nome_preenchido or telefone_preenchido:
             return lead_data
 
+        # Lead ignorado por não ter nome nem telefone
         return None
 
     def calculate_conversion_metrics(self, df: pd.DataFrame) -> Dict[str, Any]:

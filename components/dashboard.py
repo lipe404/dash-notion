@@ -48,6 +48,29 @@ class Dashboard:
                 value=metrics.get("leads_perdidos", 0)
             )
 
+    def render_data_quality_info(self, df: pd.DataFrame):
+        """Renderiza informações sobre qualidade dos dados"""
+        if df.empty:
+            return
+
+        st.subheader("📊 Qualidade dos Dados")
+
+        col1, col2, col3 = st.columns(3)
+
+        with col1:
+            leads_com_nome = len(df[df["nome"].notna() & (df["nome"] != "")])
+            st.metric("👤 Leads com Nome", leads_com_nome)
+
+        with col2:
+            leads_com_telefone = len(
+                df[df["telefone"].notna() & (df["telefone"] != "")])
+            st.metric("📞 Leads com Telefone", leads_com_telefone)
+
+        with col3:
+            leads_com_status = len(
+                df[df["status"].notna() & (df["status"] != "")])
+            st.metric("📋 Leads com Status", leads_com_status)
+
     def render_main_dashboard(self):
         """Renderiza o dashboard principal"""
         st.title("📊 Dashboard de Vendas - Notion CRM")
@@ -59,13 +82,15 @@ class Dashboard:
         if df.empty:
             st.error("❌ Nenhum dado encontrado. Verifique:")
             st.info("• Se o token do Notion está correto")
-            st.info("• Se as páginas começam com 'CRM'")
-            st.info(
-                "• Se as tabelas têm as colunas: Data, Nome, Telefone, Curso, Status")
+            st.info("• Se as tabelas têm dados com Nome e/ou Telefone preenchidos")
+            st.info("• Se as colunas estão nomeadas corretamente")
             return
 
         # Mostrar informações de debug
         st.success(f"✅ {len(df)} leads carregados com sucesso!")
+
+        # Informações sobre qualidade dos dados
+        self.render_data_quality_info(df)
 
         # Calcular métricas
         metrics = self.data_processor.calculate_conversion_metrics(df)

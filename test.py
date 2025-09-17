@@ -61,7 +61,8 @@ def test_status_extraction():
                         prop_type = prop_data.get("type", "unknown")
 
                         # Focar em propriedades que podem ser status
-                        if "status" in prop_name.lower() or prop_type == "status":
+                        if "status" in prop_name.lower(
+                                            ) or prop_type == "status":
                             status_found = True
                             print(f"      🎯 PROPRIEDADE DE STATUS ENCONTRADA!")
                             print(f"         Nome: '{prop_name}'")
@@ -82,7 +83,8 @@ def test_status_extraction():
                                 print(f"         Dados brutos: {select_data}")
                             else:
                                 print(
-                                    f"         ⚠️ Tipo não esperado para status: {prop_type}")
+                                    f"         ⚠️ Tipo não esperado para status: {
+                                        prop_type}")
 
                     if not status_found:
                         print(

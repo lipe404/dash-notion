@@ -23,13 +23,47 @@ class NotionClient:
             return []
 
     def get_database_entries(self, database_id: str) -> List[Dict[str, Any]]:
-        """Busca todas as entradas de um database"""
+        """Busca TODAS as entradas de um database (sem limitação de 100)"""
+        all_entries = []
+        has_more = True
+        next_cursor = None
+
+        print(
+            f"DEBUG: Iniciando busca de entradas para database {database_id}")
+
         try:
-            response = self.client.databases.query(database_id=database_id)
-            return response.get("results", [])
+            while has_more:
+                # Preparar parâmetros da query
+                query_params = {
+                    "database_id": database_id,
+                    "page_size": 100  # Máximo por página
+                }
+
+                # Adicionar cursor se não for a primeira página
+                if next_cursor:
+                    query_params["start_cursor"] = next_cursor
+
+                # Fazer a query
+                response = self.client.databases.query(**query_params)
+
+                # Adicionar resultados à lista
+                page_results = response.get("results", [])
+                all_entries.extend(page_results)
+
+                # Verificar se há mais páginas
+                has_more = response.get("has_more", False)
+                next_cursor = response.get("next_cursor")
+
+                print(
+                    f"DEBUG: Página processada - {len(page_results)} entradas. Total acumulado: {len(all_entries)}. Há mais páginas: {has_more}")
+
         except Exception as e:
             print(f"Erro ao buscar entradas do database {database_id}: {e}")
             return []
+
+        print(
+            f"DEBUG: Busca finalizada - Total de {len(all_entries)} entradas encontradas para database {database_id}")
+        return all_entries
 
     def get_database_info(self, database_id: str) -> Dict[str, Any]:
         """Busca informações de um database"""
@@ -59,7 +93,7 @@ class NotionClient:
                 select_data = property_data.get("select")
                 return select_data.get("name", "") if select_data else ""
 
-            elif prop_type == "status":  # ✅ ADICIONADO SUPORTE PARA TIPO "STATUS"
+            elif prop_type == "status":
                 status_data = property_data.get("status")
                 return status_data.get("name", "") if status_data else ""
 
